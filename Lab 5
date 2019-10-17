@@ -1,0 +1,205 @@
+// StepperMotorController.c starter file EE319K Lab 5
+// Runs on TM4C123
+// Finite state machine to operate a stepper motor.  
+// Jonathan Valvano
+// September 2, 2019
+
+// Hardware connections (External: two input buttons and four outputs to stepper motor)
+//  PA5 is Wash input  (1 means pressed, 0 means not pressed)
+//  PA4 is Wiper input  (1 means pressed, 0 means not pressed)
+//  PE5 is Water pump output (toggle means washing)
+//  PE4-0 are stepper motor outputs 
+//  PF1 PF2 or PF3 control the LED on Launchpad used as a heartbeat
+//  PB6 is LED output (1 activates external LED on protoboard)
+
+#include "SysTick.h"
+#include "TExaS.h"
+#include <stdint.h>
+#include "../inc/tm4c123gh6pm.h"
+
+void EnableInterrupts(void);
+// edit the following only if you need to move pins from PA4, PE3-0      
+// logic analyzer on the real board
+#define PA4       (*((volatile unsigned long *)0x40004040))
+#define PE50      (*((volatile unsigned long *)0x400240FC))
+void SendDataToLogicAnalyzer(void){
+  UART0_DR_R = 0x80|(PA4<<2)|PE50;
+}
+// 	#define Home 0
+//	#define MO2 1
+//	#define MO4 2
+//	#define MO8 3
+//	#define MS8 4
+//	#define MO16 5
+//	#define MO1 6
+//	#define MO22 7
+//	#define MO44 8
+//	#define MS44 9
+//	#define MO88 10
+//	#define MO1616 11
+//	#define BM88 12
+//	#define BM44 13
+//	#define BS44 14
+//	#define BM22 15
+//	#define BM1 16
+//	#define BM16 17
+//	#define BM8 18
+//	#define BS8 19
+//	#define BM4 20
+//	#define BM2 21  
+//	
+//	struct state {
+//		uint16_t output; // 2-bit output
+//		uint16_t dwell; //ms
+//		uint8_t next[4];
+//	}; 
+//	struct state fsm [22] = {
+//		{0x01, 50, { Home, MO2, MO2, MO2}}, //Home
+//		{0x02, 50, { MO4, MO4, MO4, MO4}}, //MO2
+//		{0x04, 50, { MO8, MO8, MS8, MS8}}, //MO4
+//		{0x08, 50, { MO16, MO16, MO16, MO16}}, //MO8
+//		{0x28, 100, { MO16, MO16, MO16, MO16}}, //MS8
+//		{0x10, 50, { MO1, MO1, MO1, MO1}}, //MO16
+//		{0x01, 50, { MO22, MO22, MO22, MO22}}, //MO1
+//		{0x02, 50, { MO44, MO44, MS44, MS44}}, //MO22
+//		{0x04, 50, { MO88, MO88, MO88, MO88}}, //MO44
+//		{0x24, 100, { MO88, MO88, MO88, MO88}}, //MS44
+//		{0x08, 50, { MO1616, MO1616, MO1616, MO1616}}, //MO88
+//		{0x10, 50, { BM88, BM88, BM88, BM88}}, //MO1616
+//		{0x08, 50, { BM44, BM44, BS44, BS44}}, //BM88
+//		{0x04, 50, { BM22, BM22, BM22, BM22}}, //BM44
+//		{0x24, 100, { BM22, BM22, BM22, BM22}}, //BS44
+//		{0x02, 50, { BM1, BM1, BM1, BM1}}, //BM22
+//		{0x01, 50, { BM16, BM16, BM16, BM16}}, //BM1
+//		{0x10, 50, { BM8, BM8, BS8, BS8}}, //BM16
+//		{0x08, 50, { BM4, BM4, BM4, BM4}}, //BM8
+//		{0x28, 100, { BM4, BM4, BM4, BM4}}, //BS8
+//		{0x04, 50, { BM2, BM2, BM2, BM2}}, //BM4
+//		{0x02, 50, { Home, Home, Home, Home}}, //BM2
+//	};
+	
+	#define Home  0
+	#define MO2   1
+	#define MW2   2
+	#define LED1  3
+	#define MO4   4
+	#define MW4   5
+	#define LED2  6
+	#define MO8   7
+	#define MW8   8
+	#define LED3  9
+	#define MO16  10
+	#define MW16  11
+	#define MO1   12
+	#define LED4  13
+	#define MO22  14
+	#define MW22  15
+	#define MO24  16
+	#define MW24  17
+	#define LED5  18
+	#define MO28  19
+	#define MW28  20
+	#define MO216 21
+	#define MW216 22 
+	#define LED6  23 
+	#define MB8   24 
+	#define MBW8  25 
+	#define MB4   26
+	#define MBW4  27 
+	#define LED7  28 
+	#define MB2   29
+	#define MBW2  30 
+	#define MB1   31
+	#define MBW1  32 
+	#define LED8  33 
+	#define MB16  34
+	#define MB28  35 
+	#define MB24  36
+	#define LED9  37 
+	#define MB22  38
+
+ 	
+	
+	struct state {
+		uint16_t output; // 2-bit output
+		uint16_t dwell; //ms
+		uint8_t next[4];
+	}; 
+	struct state fsm [39] = {
+		
+		{0x00, 50, { Home, MO2, MO2, MO2}}, //Home
+		{0x01, 50, { MW2, MO4, MO4, MO4}}, //MO2
+		{0x02, 50, { Home, Home, Home, Home}}, //MW2
+		{0x04, 50, { MW4, MO8, LED1, LED1}}, //MO4
+		{0x08, 50, { MW2,MW2,MW2,MW2}}, //MW4
+		{0x10, 100, { MW2,MO8,MO8,MO8}}, //LED1
+		{0x01, 50, { MW8, MO16, LED2, LED2}}, //MO8
+		{0x02, 50, { MW4,MW4,MW4,MW4}}, //MW8
+		{0x04, 50, { MW8, MO16, MO16,MO16}}, //LED2
+		{0x08, 50, { MW16, MO1, MO1, MO1}}, //MO16
+		{0x10, 100, { MW8,MW8,MW8, MW8}}, //MW16
+			{0x08, 50, { MW16,MO22, MO22, MO22}}, //M01
+			{0x04, 50, {MW22, MO24, LED3, LED3}}, //M022
+			{0x02, 50, {Home,Home, Home,Home}}, //MW22    <---double check
+			{0x01, 50, { MW22, MO24, MO24,MO24}}, //LED3
+			{0x10, 100, { MW24, MO28, MO28, MO28}}, //M024
+			{0x08, 50, { MW22,MW22,MW22,MW22}}, //MW24
+			{0x04, 50, { MW28,MO216,LED4,LED4}}, //MO28
+			{0x02, 50, { MW24,MW24,MW24,MW24}}, //MW28
+			{0x01, 50, {MW28, MO216, MO216,MO216}}, //LED4
+		{0x01, 100, {MW216, MB8, MB8, MB8 }}, //M0216
+		{0x02, 50, { MW28, MW28,MW28, MW28}}, //MW216
+		{0x04, 50, { MBW8, MB4, LED5, LED5}}, //MB8
+		{0x08, 50, { MW216, MW216, MW216, MW216 }}, //MBW8
+		{0x10, 50, { MBW8, MB4, MB4, MB4 }}, //LED5
+		{0x01, 50, { MBW4, MB2, MB2, MB2}}, //MB4
+		{0x02, 50, { MBW8, MBW8, MBW8, MBW8}}, //MBW4
+		{0x04, 50, { MBW2, MB1, LED6, LED6 }}, //MB2
+		{0x08, 50, { MBW4, MBW4,MBW4, MBW4}}, //MBW2
+		{0x01, 50, { MBW4, MB1, MB1, MB1}}, //LED6
+			{0x08, 50, {MBW1, MB16, MB16, MB16 }}, //MB1
+			{0x04, 50, { MB2, MB2, MB2, MB2}}, //MBW1--> CHECK
+			{0x02, 50, { MB28, MB28, LED7, LED7 }}, //MB16
+			{0x01, 50, { MB28, MB28, MB28, MB28 }}, //LED7
+			{0x10, 50, { MB24, MB24, LED8, LED8 }}, //MB28
+			{0x08, 50, { MB24, MB24, MB24,MB24 }}, //LED8
+			{0x04, 50, { MB22, MB22, LED9, LED9}}, //MB24
+			{0x02, 50, { MB22, MB22, MB22, MB22 }}, //LED9
+			{0x01, 50, { Home, Home,Home, Home }}, //MB22
+		
+	};
+	
+		uint8_t CS = Home; //Current State
+		uint8_t input; // Input
+int main(void){ 
+  TExaS_Init(&SendDataToLogicAnalyzer);    // activate logic analyzer and set system clock to 80 MHz
+  SysTick_Init();   
+// you initialize your system here
+// you initialize your system here
+	SYSCTL_RCGCGPIO_R = 0x31; 
+	
+	while((SYSCTL_RCGCGPIO_R & 0x31)==0){}
+	
+	GPIO_PORTA_DIR_R&=0xFFFFFFCF;
+	GPIO_PORTA_DEN_R|=0x30; 
+	
+	GPIO_PORTE_DIR_R|=0x3F; 
+	GPIO_PORTE_DEN_R|=0x3F; 
+	
+	GPIO_PORTF_DIR_R|=0x02; 
+	GPIO_PORTF_DEN_R|=0x02; 
+	
+
+
+  EnableInterrupts();   
+  while(1){
+// output
+		GPIO_PORTE_DATA_R = fsm[CS].output;
+// wait
+		SysTick_Wait1ms(fsm[CS].dwell);
+// input
+		input = GPIO_PORTA_DATA_R&0x30;
+// next		
+		CS = fsm[CS].next[input>>4];	
+  }
+}
